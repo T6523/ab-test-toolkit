@@ -6,26 +6,48 @@ from scipy.stats import norm
 
 
 def get_rng(seed):
+    """Seeded NumPy random generator, no global state.
+
+    Args:
+        seed: int
+
+    Returns:
+        numpy.random.Generator
+    """
     return np.random.default_rng(seed=seed)
 
 
 def _check_positive_int(name, value):
+    """Validate positive integer.
+
+    Args:
+        name: argument name for the error message
+        value: value to check
+
+    Raises:
+        ValueError: not an integer, or < 1
+    """
     if not isinstance(value, Integral) or value < 1:
         raise ValueError(f"{name} must be a positive integer, got {value!r}")
 
 
 def simulate_ab(n_per_arm, p_control, true_lift, n_sims, seed) -> dict:
-    """Simulate n_sims independent A/B tests with a known true lift.
+    """Simulate n_sims A/B tests with known true lift. Binomial draws per arm.
 
-    Each test has n_per_arm users per arm. Control converts at p_control and
-    treatment at p_control + true_lift. Conversion counts are drawn directly
-    from a binomial, which is equivalent to simulating users one by one.
+    Args:
+        n_per_arm: users per arm, int, > 0
+        p_control: control rate, in (0, 1)
+        true_lift: treatment rate - control rate, p_control + true_lift in (0, 1)
+        n_sims: number of tests, int, > 0
+        seed: int, same seed -> same arrays
 
-    Return a dict with integer arrays x_control and x_treat, each of shape
-    (n_sims,). The same seed gives the same arrays.
+    Returns:
+        dict:
+            x_control: conversions, int array, shape (n_sims,)
+            x_treat: conversions, int array, shape (n_sims,)
 
-    Raise ValueError if n_per_arm or n_sims is not a positive integer, or if
-    p_control or p_control + true_lift is not strictly between 0 and 1.
+    Raises:
+        ValueError: n_per_arm or n_sims not positive int, rate outside (0, 1)
     """
     _check_positive_int("n_per_arm", n_per_arm)
     _check_positive_int("n_sims", n_sims)
@@ -36,25 +58,31 @@ def simulate_ab(n_per_arm, p_control, true_lift, n_sims, seed) -> dict:
             f"p_control + true_lift must be between 0 and 1, got {p_control + true_lift:.8f}")
 
     rng = get_rng(seed)
+    # sum of n_per_arm Bernoulli(p) users ~ Binomial(n_per_arm, p), so draw counts directly
     x_control = rng.binomial(n_per_arm, p_control, size=n_sims)
     x_treat = rng.binomial(n_per_arm, p_control + true_lift, size=n_sims)
     return {'x_control': x_control, 'x_treat': x_treat}  # shape (n_sims,)
 
 
 def analyze_batch(x_control, x_treat, n_per_arm, alpha=0.05) -> dict:
-    """Vectorized ztest_two_prop and lift_ci for many tests at once.
+    """Vectorized ztest_two_prop and lift_ci. Same numbers as scalar, element by element.
 
-    x_control and x_treat are arrays of conversion counts with n_per_arm
-    users in each arm. Give the same numbers as the scalar functions in
-    analysis.py, element by element.
+    Args:
+        x_control, x_treat: conversions, int arrays, same shape, 0 <= x <= n_per_arm
+        n_per_arm: users per arm, int, > 0
+        alpha: significance level, in (0, 1)
 
-    Return a dict of arrays: lift (treatment - control), z and p_value from
-    the pooled z-test, low and high from the unpooled Wald CI, and
-    significant (p_value < alpha). Where the pooled rate is 0 or 1 the test
-    is undefined, so z = 0 and p_value = 1.
+    Returns:
+        dict (arrays, same shape as x_control):
+            lift: treat - control, proportion
+            z: pooled z-test statistic
+            p_value: two-sided
+            low, high: unpooled Wald CI
+            significant: p_value < alpha
+        pooled rate 0 or 1 -> z=0, p_value=1
 
-    Raise ValueError for an invalid alpha or n_per_arm, counts that are not
-    integers or lie outside 0..n_per_arm, or arrays of different shapes.
+    Raises:
+        ValueError: invalid alpha or n_per_arm, non-integer or out-of-range counts, shape mismatch
     """
     if alpha <= 0 or 1 <= alpha:
         raise ValueError(f"alpha must be between 0 and 1, got {alpha}")
@@ -94,9 +122,20 @@ def analyze_batch(x_control, x_treat, n_per_arm, alpha=0.05) -> dict:
 
 
 def false_positive_rate(n_per_arm, p_control, n_sims, seed, alpha=0.05) -> float:
-    """Return the fraction of A/A tests (true_lift = 0) that are significant.
+    """Type I error rate by simulation. A/A tests (true_lift = 0), correct test gives about alpha.
 
-    A correct test gives about alpha.
+    Args:
+        n_per_arm: users per arm, int, > 0
+        p_control: shared rate, in (0, 1)
+        n_sims: number of tests, int, > 0
+        seed: int
+        alpha: significance level, in (0, 1)
+
+    Returns:
+        float: fraction significant
+
+    Raises:
+        ValueError: see simulate_ab, analyze_batch
     """
     simul = simulate_ab(n_per_arm, p_control, 0, n_sims, seed)
     A_A = analyze_batch(simul['x_control'], simul['x_treat'], n_per_arm, alpha)
@@ -104,9 +143,21 @@ def false_positive_rate(n_per_arm, p_control, n_sims, seed, alpha=0.05) -> float
 
 
 def ci_coverage(n_per_arm, p_control, true_lift, n_sims, seed, alpha=0.05) -> float:
-    """Return the fraction of simulated CIs that contain the true lift.
+    """CI coverage by simulation. Correct (1 - alpha) CI covers about 1 - alpha.
 
-    A correct (1 - alpha) CI covers about 1 - alpha.
+    Args:
+        n_per_arm: users per arm, int, > 0
+        p_control: control rate, in (0, 1)
+        true_lift: true absolute lift, p_control + true_lift in (0, 1)
+        n_sims: number of tests, int, > 0
+        seed: int
+        alpha: 1 - confidence level, in (0, 1)
+
+    Returns:
+        float: fraction of CIs containing true_lift
+
+    Raises:
+        ValueError: see simulate_ab, analyze_batch
     """
     simul = simulate_ab(n_per_arm, p_control, true_lift, n_sims, seed)
     A_B = analyze_batch(simul['x_control'], simul['x_treat'], n_per_arm, alpha)
@@ -114,16 +165,33 @@ def ci_coverage(n_per_arm, p_control, true_lift, n_sims, seed, alpha=0.05) -> fl
 
 
 def _power(n_per_arm, p_control, true_lift, n_sims, seed, alpha=0.05):
+    """Simulated power at one n. Same arguments as ci_coverage.
+
+    Returns:
+        float: fraction significant
+    """
     simul = simulate_ab(n_per_arm, p_control, true_lift, n_sims, seed)
     A_B = analyze_batch(simul['x_control'], simul['x_treat'], n_per_arm, alpha)
     return float(A_B['significant'].mean())
 
 
 def power_curve(p_control, true_lifts, n_grid, n_sims, seed, alpha=0.05) -> dict:
-    """Return {true_lift: [simulated power at each n in n_grid]}.
+    """Simulated power for each true lift and sample size. Seed + index per n.
 
-    Power is the fraction of simulated tests that are significant. Each
-    sample size in n_grid uses its own derived seed (seed + its index).
+    Args:
+        p_control: control rate, in (0, 1)
+        true_lifts: iterable of true absolute lifts
+        n_grid: iterable of n per arm
+        n_sims: number of tests per cell, int, > 0
+        seed: int, n_grid[i] uses seed + i
+        alpha: significance level, in (0, 1)
+
+    Returns:
+        dict:
+            true_lift: list of power, one per n in n_grid
+
+    Raises:
+        ValueError: see simulate_ab, analyze_batch
     """
     return {true_lift: [_power(n, p_control, true_lift, n_sims, seed + i, alpha)
                         for i, n in enumerate(n_grid)]
@@ -131,18 +199,26 @@ def power_curve(p_control, true_lifts, n_grid, n_sims, seed, alpha=0.05) -> dict
 
 
 def exaggeration_stats(n_per_arm, p_control, true_lift, n_sims, seed, alpha=0.05) -> dict:
-    """Measure how much significant results overstate the true lift.
+    """Type M (exaggeration) and type S (sign) errors among significant runs (Gelman and Carlin).
 
-    For the significant simulations return:
-      exaggeration_ratio: mean(|estimated lift|) / |true_lift| (type M error)
-      type_s: fraction whose estimate has the wrong sign (type S error)
-    plus power and n_significant (the number of significant runs).
+    Args:
+        n_per_arm: users per arm, int, > 0
+        p_control: control rate, in (0, 1)
+        true_lift: true absolute lift, != 0, p_control + true_lift in (0, 1)
+        n_sims: number of tests, int, > 0
+        seed: int
+        alpha: significance level, in (0, 1)
 
-    If no run is significant, exaggeration_ratio and type_s are nan and a
-    warning is issued.
+    Returns:
+        dict:
+            power: fraction significant
+            n_significant: number of significant runs
+            exaggeration_ratio: mean(|estimated lift|) / |true_lift|, significant runs
+            type_s: fraction of significant runs with wrong sign
+        none significant -> ratio and type_s are nan, warns
 
-    Raise ValueError if true_lift is 0 (the ratio is undefined) or for
-    invalid simulation arguments.
+    Raises:
+        ValueError: true_lift is 0, see simulate_ab, analyze_batch
     """
     if true_lift == 0:
         raise ValueError('true_lift must not be 0 for the ratio to be defined')

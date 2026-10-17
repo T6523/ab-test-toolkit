@@ -4,7 +4,15 @@ from scipy.stats import norm
 
 
 def _validate_counts(x_control, n_control, x_treat, n_treat):
-    """Raise ValueError naming the bad argument, accepts NumPy integers."""
+    """Validate counts. Accepts NumPy integers.
+
+    Args:
+        x_control, x_treat: conversions
+        n_control, n_treat: users
+
+    Raises:
+        ValueError: names bad argument; non-integer, n <= 0, x outside [0, n]
+    """
     args = {"x_control": x_control, "n_control": n_control,
             "x_treat": x_treat, "n_treat": n_treat}
     for name, v in args.items():
@@ -19,17 +27,21 @@ def _validate_counts(x_control, n_control, x_treat, n_treat):
 
 
 def ztest_two_prop(x_control, n_control, x_treat, n_treat) -> dict:
-    """Test whether control and treatment conversion rates differ.
+    """Two-sided two-proportion z-test. Pooled SE (null: same rate).
 
-    Two-sided z-test for two proportions. The standard error uses the
-    pooled rate, since the null hypothesis says both arms share one rate.
+    Args:
+        x_control, x_treat: conversions, int, 0 <= x <= n
+        n_control, n_treat: users, int, > 0
 
-    Return a dict with lift (treatment - control, as a proportion), z and
-    p_value. If the pooled rate is 0 or 1 the test is undefined, so
-    z = 0.0 and p_value = 1.0.
+    Returns:
+        dict:
+            lift: treat - control, proportion
+            z: test statistic
+            p_value: two-sided
+        pooled rate 0 or 1 -> z=0.0, p_value=1.0
 
-    Raise ValueError if a count is not an integer, n <= 0, or x is not
-    between 0 and n.
+    Raises:
+        ValueError: bad count, n <= 0, x outside [0, n]
     """
     _validate_counts(x_control, n_control, x_treat, n_treat)
     pc = x_control / n_control
@@ -37,24 +49,33 @@ def ztest_two_prop(x_control, n_control, x_treat, n_treat) -> dict:
     lift = pt - pc
     p_pool = (x_control + x_treat) / (n_control + n_treat)
     if p_pool == 0 or p_pool == 1:
-        z,p = 0.0, 1.0
+        z,p = 0.0, 1.0  # se would be 0, test undefined
     else:
-        se = sqrt(p_pool * (1-p_pool) * (1/n_control + 1/n_treat))  # z_test pooled
+        # H0: pc = pt, so both arms share p_pool and Var(lift) = p(1-p)(1/n_c + 1/n_t)
+        # CLT: lift ~ N(0, se^2) under H0, so z = lift / se ~ N(0, 1)
+        se = sqrt(p_pool * (1-p_pool) * (1/n_control + 1/n_treat))
         z = lift / se
+        # two-sided: P(|Z| > |z|) = 2 * P(Z > |z|)
         p = 2 * norm.sf(abs(z))
 
     return {'lift':lift,'z':z,'p_value':p}
 
 
 def lift_ci(x_control, n_control, x_treat, n_treat, alpha=0.05) -> tuple:
-    """Return the confidence interval (low, high) for the absolute lift.
+    """Wald CI for absolute lift. Unpooled SE (CI does not assume null).
 
-    Wald interval, lift +/- z * se. The standard error is unpooled (each
-    arm uses its own rate) because the interval does not assume the null.
-    Can disagree with ztest_two_prop on borderline cases, which uses the
-    pooled standard error.
+    Can disagree with ztest_two_prop on borderline cases (pooled SE).
 
-    Raise ValueError for invalid counts, or if alpha is not in (0, 1).
+    Args:
+        x_control, x_treat: conversions, int, 0 <= x <= n
+        n_control, n_treat: users, int, > 0
+        alpha: 1 - confidence level, in (0, 1)
+
+    Returns:
+        tuple: (low, high), absolute lift, proportion
+
+    Raises:
+        ValueError: bad count, alpha outside (0, 1)
     """
     _validate_counts(x_control, n_control, x_treat, n_treat)
 
@@ -63,24 +84,33 @@ def lift_ci(x_control, n_control, x_treat, n_treat, alpha=0.05) -> tuple:
     pc = x_control / n_control
     pt = x_treat / n_treat
     lift = pt - pc
-    se = sqrt(pc * (1-pc) /n_control + pt*(1-pt) / n_treat) # not pooled
+    # no null here, so each arm keeps its own variance: Var(lift) = pc(1-pc)/n_c + pt(1-pt)/n_t
+    se = sqrt(pc * (1-pc) /n_control + pt*(1-pt) / n_treat)
+    # CLT: (lift - true lift) / se ~ N(0, 1), so lift +/- z_{1-alpha/2} * se covers true lift w.p. 1 - alpha
     z = norm.ppf(1 - alpha/2)
     return lift - z*se, lift + z*se  
 
 
 def relative_lift_ci(x_control, n_control, x_treat, n_treat, alpha=0.05) -> tuple:
-    """Return the confidence interval (low, high) for the relative lift.
+    """CI for relative lift: lift_ci / control rate.
 
-    The absolute interval from lift_ci divided by the control rate, so
-    0.10 means +10%. This is an approximation: it treats the control rate
-    as fixed, so the true interval is somewhat wider.
+    Approximate, control rate treated as fixed (true CI wider).
 
-    Raise ValueError for invalid counts, alpha outside (0, 1), or a
-    control rate of zero.
+    Args:
+        x_control, x_treat: conversions, int, 0 <= x <= n
+        n_control, n_treat: users, int, > 0
+        alpha: 1 - confidence level, in (0, 1)
+
+    Returns:
+        tuple: (low, high), relative lift, 0.10 = +10%
+
+    Raises:
+        ValueError: bad count, alpha outside (0, 1), control rate 0
     """
     low, high = lift_ci(x_control, n_control, x_treat, n_treat, alpha=alpha)
     if x_control == 0:
         raise ValueError("control is zero")
     pc = x_control / n_control
+    # relative lift = absolute lift / pc, so divide both ends by pc (ignores noise in pc)
     return low / pc , high / pc
 

@@ -2,6 +2,7 @@ from enum import Enum
 
 
 class Verdict(Enum):
+    """Outcome of decide. str() gives "NAME: explanation"."""
     LAUNCH = "LAUNCH"
     HARMFUL = "HARMFUL"
     STAT_SIG_NOT_PRACTICAL = "STAT_SIG_NOT_PRACTICAL"
@@ -34,15 +35,19 @@ _EXPLANATIONS = {
 
 
 def decide(low, high, delta) -> Verdict:
-    """Turn a CI on absolute lift and a practical threshold into a verdict.
+    """Map lift CI and practical threshold to a Verdict. Ordered rules, first match wins.
 
-    low, high are the ends of the confidence interval on the absolute lift (a
-    proportion) and delta is the smallest lift worth shipping. Rules are
-    checked in order and the first match wins.
+    Lift CI only, guardrail metrics not considered.
 
-    Only the lift CI is considered; guardrail metrics are not looked at.
+    Args:
+        low, high: CI ends on absolute lift, proportion, low <= high
+        delta: smallest lift worth shipping, > 0
 
-    Raise ValueError if low > high or delta <= 0.
+    Returns:
+        Verdict: LAUNCH, HARMFUL, STAT_SIG_NOT_PRACTICAL, NO_MEANINGFUL_EFFECT or INCONCLUSIVE
+
+    Raises:
+        ValueError: low > high, delta <= 0
     """
     if low > high:
         raise ValueError(f"low must be <= high, got low={low}, high={high}")
@@ -61,5 +66,12 @@ def decide(low, high, delta) -> Verdict:
 
 
 def explain(verdict: Verdict) -> str:
-    """Return a one-sentence explanation of a verdict."""
+    """One-sentence explanation of a verdict.
+
+    Args:
+        verdict: Verdict member
+
+    Returns:
+        str: explanation
+    """
     return _EXPLANATIONS[verdict]

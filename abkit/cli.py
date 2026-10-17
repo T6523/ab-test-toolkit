@@ -14,14 +14,38 @@ SRM_WARNING = ("WARNING: arm sizes differ from the planned split. "
 
 
 def _fmt_p(p):
+    """Format p-value, scientific below 1e-4.
+
+    Args:
+        p: p-value
+
+    Returns:
+        str
+    """
     return f"{p:.4f}" if p >= 1e-4 else f"{p:.1e}"
 
 
 def _pp(x):
+    """Format a proportion as signed percentage points.
+
+    Args:
+        x: proportion, 0.01 -> "+1.00 pp"
+
+    Returns:
+        str
+    """
     return f"{x * 100:+.2f} pp"
 
 
 def cmd_plan(args):
+    """`plan` command. Print required sample size.
+
+    Args:
+        args: parsed Namespace with baseline, mde, alpha, power
+
+    Raises:
+        ValueError: invalid planning inputs
+    """
     n = sample_size_per_arm(args.baseline, args.mde, alpha=args.alpha, power=args.power)
     print(f"Baseline conversion:      {args.baseline:.2%}")
     print(f"Minimum detectable lift:  {_pp(args.mde)} ({args.mde / args.baseline:+.1%} relative)")
@@ -31,7 +55,17 @@ def cmd_plan(args):
 
 
 def _load_counts(path):
-    """Return (n_control, x_control, n_treat, x_treat) from a CSV file."""
+    """Read counts from a CSV with columns variant (control/treatment) and outcome (0/1).
+
+    Args:
+        path: CSV file path
+
+    Returns:
+        tuple: (n_control, x_control, n_treat, x_treat)
+
+    Raises:
+        ValueError: file missing/unreadable, missing column, bad value, empty arm
+    """
     try:
         df = pd.read_csv(path)
     except FileNotFoundError:
@@ -59,6 +93,14 @@ def _load_counts(path):
 
 
 def cmd_analyze(args):
+    """`analyze` command. Print SRM check, lift, p-value, CI and verdict.
+
+    Args:
+        args: parsed Namespace with csv, delta, alpha, expected_ratio
+
+    Raises:
+        ValueError: bad CSV or invalid inputs
+    """
     n_c, x_c, n_t, x_t = _load_counts(args.csv)
     srm = srm_check(n_c, n_t, expected_ratio=args.expected_ratio)
     test = ztest_two_prop(x_c, n_c, x_t, n_t)
@@ -92,6 +134,11 @@ def cmd_analyze(args):
 
 
 def build_parser():
+    """Argparse parser with `plan` and `analyze` subcommands.
+
+    Returns:
+        argparse.ArgumentParser
+    """
     parser = argparse.ArgumentParser(
         prog="abkit", description="Plan and analyze A/B tests on a binary conversion metric.")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -117,6 +164,14 @@ def build_parser():
 
 
 def main(argv=None) -> int:
+    """CLI entry point. Errors go to stderr.
+
+    Args:
+        argv: argument list, default sys.argv[1:]
+
+    Returns:
+        int: exit code, 0 ok, 2 on ValueError
+    """
     args = build_parser().parse_args(argv)
     try:
         args.func(args)
