@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "abkit"
+version = "0.1.0"
+description = "Plan, analyze, and decide A/B tests with Monte Carlo simulations that verify the methods."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["numpy", "scipy", "pandas", "matplotlib"]
+
+[project.optional-dependencies]
+dev = ["statsmodels", "pytest"]
+
+[project.scripts]
+abkit = "abkit.cli:main"
+
+[tool.setuptools]
+packages = ["abkit"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
