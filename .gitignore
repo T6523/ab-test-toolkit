@@ -1,5 +1,6 @@
 *.csv
 *.md
+!tests/data/example.csv
 .venv
 __pycache__/
 # metadata
