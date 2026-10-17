@@ -22,28 +22,28 @@ def test_ztest_two_prop(args, lift, z, p_value):
     assert r["p_value"] == pytest.approx(p_value, abs=1e-6)
 
 
-@pytest.mark.parametrize("args, kwargs, lo, hi", [
+@pytest.mark.parametrize("args, kwargs, low, high", [
     (FIXTURE_A, {}, 0.001504, 0.018496),
     (FIXTURE_A, {"alpha": 0.01}, -0.001166, 0.021166),
     ((1200, 10000, 1000, 10000), {}, -0.028668, -0.011332),
     ((500, 5000, 500, 5000), {}, -0.011760, 0.011760),
 ])
-def test_lift_ci(args, kwargs, lo, hi):
-    assert lift_ci(*args, **kwargs) == pytest.approx((lo, hi), abs=1e-6)
+def test_lift_ci(args, kwargs, low, high):
+    assert lift_ci(*args, **kwargs) == pytest.approx((low, high), abs=1e-6)
 
 
-@pytest.mark.parametrize("args, lo, hi", [
+@pytest.mark.parametrize("args, low, high", [
     (FIXTURE_A, 0.01504, 0.18496),
     ((1200, 10000, 1000, 10000), -0.23890, -0.09443),
 ])
-def test_relative_lift_ci(args, lo, hi):
-    assert relative_lift_ci(*args) == pytest.approx((lo, hi), abs=1e-5)
+def test_relative_lift_ci(args, low, high):
+    assert relative_lift_ci(*args) == pytest.approx((low, high), abs=1e-5)
 
 
 def test_ci_is_wider_at_higher_confidence():
-    lo95, hi95 = lift_ci(*FIXTURE_A)
-    lo99, hi99 = lift_ci(*FIXTURE_A, alpha=0.01)
-    assert lo99 < lo95 and hi99 > hi95
+    low95, high95 = lift_ci(*FIXTURE_A)
+    low99, high99 = lift_ci(*FIXTURE_A, alpha=0.01)
+    assert low99 < low95 and high99 > high95
 
 
 def test_accepts_numpy_integers():

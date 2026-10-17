@@ -47,7 +47,7 @@ def ztest_two_prop(x_control, n_control, x_treat, n_treat) -> dict:
 
 
 def lift_ci(x_control, n_control, x_treat, n_treat, alpha=0.05) -> tuple:
-    """Return the confidence interval (lo, hi) for the absolute lift.
+    """Return the confidence interval (low, high) for the absolute lift.
 
     Wald interval, lift +/- z * se. The standard error is unpooled (each
     arm uses its own rate) because the interval does not assume the null.
@@ -69,7 +69,7 @@ def lift_ci(x_control, n_control, x_treat, n_treat, alpha=0.05) -> tuple:
 
 
 def relative_lift_ci(x_control, n_control, x_treat, n_treat, alpha=0.05) -> tuple:
-    """Return the confidence interval (lo, hi) for the relative lift.
+    """Return the confidence interval (low, high) for the relative lift.
 
     The absolute interval from lift_ci divided by the control rate, so
     0.10 means +10%. This is an approximation: it treats the control rate

@@ -33,29 +33,29 @@ _EXPLANATIONS = {
 }
 
 
-def decide(lo, hi, delta) -> Verdict:
+def decide(low, high, delta) -> Verdict:
     """Turn a CI on absolute lift and a practical threshold into a verdict.
 
-    lo, hi are the ends of the confidence interval on the absolute lift (a
+    low, high are the ends of the confidence interval on the absolute lift (a
     proportion) and delta is the smallest lift worth shipping. Rules are
     checked in order and the first match wins.
 
     Only the lift CI is considered; guardrail metrics are not looked at.
 
-    Raise ValueError if lo > hi or delta <= 0.
+    Raise ValueError if low > high or delta <= 0.
     """
-    if lo > hi:
-        raise ValueError(f"lo must be <= hi, got lo={lo}, hi={hi}")
+    if low > high:
+        raise ValueError(f"low must be <= high, got low={low}, high={high}")
     if delta <= 0:
         raise ValueError(f"delta must be > 0, got {delta}")
 
-    if lo >= delta:
+    if low >= delta:
         return Verdict.LAUNCH
-    if hi < 0:
+    if high < 0:
         return Verdict.HARMFUL
-    if hi < delta and lo > 0:
+    if high < delta and low > 0:
         return Verdict.STAT_SIG_NOT_PRACTICAL
-    if hi < delta:  # lo <= 0
+    if high < delta:  # low <= 0
         return Verdict.NO_MEANINGFUL_EFFECT
     return Verdict.INCONCLUSIVE
 

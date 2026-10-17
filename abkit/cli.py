@@ -62,8 +62,8 @@ def cmd_analyze(args):
     n_c, x_c, n_t, x_t = _load_counts(args.csv)
     srm = srm_check(n_c, n_t, expected_ratio=args.expected_ratio)
     test = ztest_two_prop(x_c, n_c, x_t, n_t)
-    lo, hi = lift_ci(x_c, n_c, x_t, n_t, alpha=args.alpha)
-    verdict = decide(lo, hi, args.delta)
+    low, high = lift_ci(x_c, n_c, x_t, n_t, alpha=args.alpha)
+    verdict = decide(low, high, args.delta)
 
     rows = [("Arm", "Users", "Conversions", "Rate"),
             ("control", f"{n_c:,}", f"{x_c:,}", f"{x_c / n_c:.2%}"),
@@ -83,7 +83,7 @@ def cmd_analyze(args):
     rel = f"{test['lift'] / (x_c / n_c):+.1%} relative" if x_c else "relative lift n/a"
     print(f"Lift:     {_pp(test['lift'])} ({rel})")
     print(f"p-value:  {_fmt_p(test['p_value'])} (two-sided z-test, pooled SE)")
-    print(f"{1 - args.alpha:.0%} CI:   [{_pp(lo)}, {_pp(hi)}]")
+    print(f"{1 - args.alpha:.0%} CI:   [{_pp(low)}, {_pp(high)}]")
     print(f"Delta:    {args.delta * 100:.2f} pp")
     print(f"Verdict:  {verdict.name}")
     print(f"          {explain(verdict)}")

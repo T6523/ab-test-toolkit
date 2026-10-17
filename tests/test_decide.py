@@ -6,28 +6,28 @@ from abkit.decide import Verdict, decide, explain
 DELTA = 0.005
 
 
-@pytest.mark.parametrize("lo, hi, expected", [
+@pytest.mark.parametrize("low, high, expected", [
     (0.0062, 0.0138, Verdict.LAUNCH),
     (0.00041, 0.00159, Verdict.STAT_SIG_NOT_PRACTICAL),
     (-0.009, 0.029, Verdict.INCONCLUSIVE),
     (-0.00322, 0.00422, Verdict.NO_MEANINGFUL_EFFECT),
     (-0.012, -0.003, Verdict.HARMFUL),
     (0.003, 0.009, Verdict.INCONCLUSIVE),   # significant, lower end below delta
-    (0.005, 0.009, Verdict.LAUNCH),         # boundary: lo == delta
-    (-0.002, 0.005, Verdict.INCONCLUSIVE),  # boundary: hi == delta
+    (0.005, 0.009, Verdict.LAUNCH),         # boundary: low == delta
+    (-0.002, 0.005, Verdict.INCONCLUSIVE),  # boundary: high == delta
 ])
-def test_decide(lo, hi, expected):
-    assert decide(lo, hi, DELTA) is expected
+def test_decide(low, high, expected):
+    assert decide(low, high, DELTA) is expected
 
 
-@pytest.mark.parametrize("lo, hi, expected", [
-    (0.0, 0.004, Verdict.NO_MEANINGFUL_EFFECT),  # lo == 0 is not significant
+@pytest.mark.parametrize("low, high, expected", [
+    (0.0, 0.004, Verdict.NO_MEANINGFUL_EFFECT),  # low == 0 is not significant
     (0.0, 0.0, Verdict.NO_MEANINGFUL_EFFECT),
-    (-0.01, 0.0, Verdict.NO_MEANINGFUL_EFFECT),  # hi == 0 is not HARMFUL (hi < 0)
+    (-0.01, 0.0, Verdict.NO_MEANINGFUL_EFFECT),  # high == 0 is not HARMFUL (high < 0)
     (0.001, 0.004, Verdict.STAT_SIG_NOT_PRACTICAL),
 ])
-def test_decide_zero_boundaries(lo, hi, expected):
-    assert decide(lo, hi, DELTA) is expected
+def test_decide_zero_boundaries(low, high, expected):
+    assert decide(low, high, DELTA) is expected
 
 
 def test_decide_takes_lift_ci_output():
@@ -36,7 +36,7 @@ def test_decide_takes_lift_ci_output():
 
 
 @pytest.mark.parametrize("args", [
-    (0.01, 0.0, DELTA),   # lo > hi
+    (0.01, 0.0, DELTA),   # low > high
     (0.0, 0.01, 0.0),     # delta = 0
     (0.0, 0.01, -0.005),  # delta < 0
 ])
