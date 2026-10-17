@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from abkit.planning import sample_size_per_arm
+from abkit.sequential import peeking_fp
 from abkit.sim import analyze_batch, power_curve, simulate_ab
 
 FIG_DIR = Path(__file__).resolve().parent.parent / "figures"
@@ -76,8 +77,38 @@ def make_low_power():
     plt.close(fig)
 
 
+def make_peeking():
+    looks = [1, 2, 5, 10, 20]
+    n_total, n_sims = 10_000, 20_000
+    rates = [peeking_fp(n_total, P_CONTROL, k, n_sims, seed=6) for k in looks]
+
+    print(f"\nPeeking, A/A data, {n_total:,} users per arm in total, {n_sims:,} simulations")
+    print("| Looks | False-positive rate |")
+    print("|------:|--------------------:|")
+    for k, r in zip(looks, rates):
+        print(f"| {k:>5} | {r:>19.3f} |")
+
+    fig, ax = plt.subplots(figsize=(7, 4.5))
+    ax.plot(looks, rates, "o-", color="tab:red")
+    for k, r in zip(looks, rates):
+        ax.annotate(f"{r:.1%}\n({k} look{'s' if k > 1 else ''})", (k, r),
+                    textcoords="offset points", xytext=(0, 8), ha="center", fontsize=8)
+    ax.axhline(0.05, color="gray", linestyle="--", linewidth=1, label="nominal 5%")
+    ax.set_xticks(looks)
+    ax.set_xlabel("Number of looks (equally spaced)")
+    ax.set_ylabel(f"False-positive rate ({n_sims:,} A/A runs per point)")
+    ax.set_title("Peeking inflates false positives (z-test at every look, alpha 0.05)",
+                 fontsize=10)
+    ax.set_ylim(0, max(rates) * 1.25)
+    ax.legend(loc="lower right")
+    fig.tight_layout()
+    fig.savefig(FIG_DIR / "peeking.png", dpi=150)
+    plt.close(fig)
+
+
 if __name__ == "__main__":
     FIG_DIR.mkdir(exist_ok=True)
     make_power_curve()
     make_low_power()
+    make_peeking()
     print(f"wrote figures to {FIG_DIR}")
