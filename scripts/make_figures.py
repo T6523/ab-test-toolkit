@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from abkit.planning import sample_size_per_arm
-from abkit.sequential import peeking_fp
+from abkit.sequential import calibrate_obf_c, obf_boundaries, peeking_fp, sequential_fp
 from abkit.sim import analyze_batch, power_curve, simulate_ab
 
 FIG_DIR = Path(__file__).resolve().parent.parent / "figures"
@@ -106,9 +106,58 @@ def make_peeking():
     plt.close(fig)
 
 
+def make_sequential():
+    looks = [1, 2, 5, 10, 20]
+    n_total, n_sims = 10_000, 20_000
+    cs = {k: calibrate_obf_c(k, n_sims=200_000, seed=7) for k in looks}
+    peek = [peeking_fp(n_total, P_CONTROL, k, n_sims, seed=6) for k in looks]
+    seq = [sequential_fp(n_total, P_CONTROL, k, cs[k], n_sims, seed=6) for k in looks]
+
+    print(f"\nSequential boundaries, A/A data, {n_total:,} users per arm in total, {n_sims:,} simulations")
+    print("| Looks | c | Peeking at 1.96 | Sequential |")
+    print("|------:|------:|----------------:|-----------:|")
+    for k, c, a, b in zip(looks, cs.values(), peek, seq):
+        print(f"| {k:>5} | {c:.3f} | {a:>15.3f} | {b:>10.3f} |")
+    for k in (5, 10):
+        print(f"per-look critical z, K = {k}: {[round(z, 2) for z in obf_boundaries(k, cs[k])]}")
+
+    fig, ax = plt.subplots(figsize=(7, 4.5))
+    ax.plot(looks, peek, "o-", color="tab:red", label="peeking (z > 1.96 at every look)")
+    ax.plot(looks, seq, "s-", color="tab:blue", label="sequential (calibrated boundaries)")
+    for k, a, b in zip(looks, peek, seq):
+        ax.annotate(f"{a:.1%}\n({k} look{'s' if k > 1 else ''})", (k, a), textcoords="offset points",
+                    xytext=(0, 8), ha="center", fontsize=8, color="tab:red")
+        ax.annotate(f"{b:.1%}", (k, b), textcoords="offset points",
+                    xytext=(0, -14), ha="center", fontsize=8, color="tab:blue")
+    ax.axhline(0.05, color="gray", linestyle="--", linewidth=1, label="nominal 5%")
+    ax.set_xticks(looks)
+    ax.set_xlabel("Number of looks (equally spaced)")
+    ax.set_ylabel(f"False-positive rate ({n_sims:,} A/A runs per point)")
+    ax.set_title("Sequential boundaries keep false positives at 5% (alpha 0.05 two-sided)", fontsize=10)
+    ax.set_ylim(0, max(peek) * 1.25)
+    ax.legend(loc="center right", fontsize=8)
+    fig.tight_layout()
+    fig.savefig(FIG_DIR / "sequential.png", dpi=150)
+    plt.close(fig)
+
+    # power cost: true lift 0.01 at the planned n (10 equally spaced looks)
+    n_plan, lift, n_sims_power = sample_size_per_arm(P_CONTROL, 0.01), 0.01, 100_000
+    fixed = peeking_fp(n_plan, P_CONTROL, 1, n_sims_power, seed=8, true_lift=lift)
+    peek10 = peeking_fp(n_plan, P_CONTROL, 10, n_sims_power, seed=8, true_lift=lift)
+    seq10 = sequential_fp(n_plan, P_CONTROL, 10, cs[10], n_sims_power, seed=8, true_lift=lift)
+    print(f"\nPower, true lift +{lift * 100:g} pp, baseline {P_CONTROL:.0%}, {n_plan:,} users per arm, {n_sims_power:,} simulations")
+    print("| Rule | Power |")
+    print("|------|------:|")
+    print(f"| single fixed-horizon test | {fixed:.3f} |")
+    print(f"| sequential, 10 looks | {seq10:.3f} |")
+    print(f"| peeking at 1.96, 10 looks (false positives {peek[looks.index(10)]:.1%}) | {peek10:.3f} |")
+    print(f"sequential power cost vs fixed horizon: {fixed - seq10:.3f}")
+
+
 if __name__ == "__main__":
     FIG_DIR.mkdir(exist_ok=True)
     make_power_curve()
     make_low_power()
     make_peeking()
+    make_sequential()
     print(f"wrote figures to {FIG_DIR}")

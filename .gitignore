@@ -5,3 +5,5 @@
 __pycache__/
 # metadata
 *.egg-info/ 
+bayes.py 
+ols_check.py
