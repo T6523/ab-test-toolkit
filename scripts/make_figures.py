@@ -9,7 +9,10 @@ import matplotlib
 matplotlib.use("Agg")  # no display needed
 import matplotlib.pyplot as plt
 import numpy as np
+from scipy.optimize import brentq
+from scipy.stats import norm
 
+from abkit.bayes import compare
 from abkit.planning import sample_size_per_arm
 from abkit.sequential import calibrate_obf_c, obf_boundaries, peeking_fp, sequential_fp
 from abkit.sim import analyze_batch, power_curve, simulate_ab
@@ -154,10 +157,65 @@ def make_sequential():
     print(f"sequential power cost vs fixed horizon: {fixed - seq10:.3f}")
 
 
+def make_bayes_vs_freq():
+    # DRAFT takeaway for the README (owner to edit). The rules disagree on borderline results: a positive
+    # lift that is not significant (z between about 1 and 1.96) is often small enough in expected loss for the
+    # Bayesian rule to ship, so at 2,000 users per arm it ships 11% of no-effect runs and 42% of +1 pp runs,
+    # against 2% and 18% for the frequentist rule. The Bayesian rule does not control false positives at 5%;
+    # it controls the average conversion rate given up when it ships (expected loss below epsilon), which is
+    # the more useful question when a wrong launch costs little. Limitation: the uniform prior and
+    # epsilon = 0.05 pp are assumptions, and a different epsilon moves the ship rates a lot (at
+    # epsilon = 0.01 pp the Bayesian rule is about as strict as the frequentist one).
+    n, n_sims, draws = 2000, 4000, 20_000
+    epsilons = (0.0005, 0.0001)  # 0.05 pp and 0.01 pp
+    rows = []
+    for lift, seed in ((0.0, 11), (0.01, 12)):
+        sims = simulate_ab(n, P_CONTROL, lift, n_sims, seed=seed)
+        res = analyze_batch(sims["x_control"], sims["x_treat"], n)
+        freq = res["significant"] & (res["lift"] > 0)  # p < 0.05 and treatment better
+        loss = np.array([compare(int(xc), n, int(xt), n, draws=draws, seed=i)["expected_loss_choose_b"]
+                         for i, (xc, xt) in enumerate(zip(sims["x_control"], sims["x_treat"]))])
+        bayes = [loss < eps for eps in epsilons]  # same posterior draws, two thresholds
+        rows.append((lift, freq.mean(), [b.mean() for b in bayes], [(freq == b).mean() for b in bayes]))
+
+    # z cutoff each Bayesian rule is equivalent to (normal approximation of the posterior of the lift):
+    # expected loss = se * (pdf(z) - z * sf(z)) with z = lift / se, solved for the epsilon threshold
+    se = np.sqrt(2 * P_CONTROL * (1 - P_CONTROL) / n)
+    z_cut = [brentq(lambda z: se * (norm.pdf(z) - z * norm.sf(z)) - eps, 0, 6) for eps in epsilons]
+
+    print(f"\nShip-B rates, {n:,} users per arm, baseline {P_CONTROL:.0%}, {n_sims:,} simulations per scenario")
+    print("| True lift | Frequentist (p < 0.05, lift > 0) | Bayesian eps 0.05 pp | Bayesian eps 0.01 pp | Agreement with frequentist (0.05 pp / 0.01 pp) |")
+    print("|----------:|---------------------------------:|---------------------:|---------------------:|-----------------------------------------------:|")
+    for lift, f, b, agree in rows:
+        print(f"| {lift * 100:+.2f} pp | {f:.3f} | {b[0]:.3f} | {b[1]:.3f} | {agree[0]:.3f} / {agree[1]:.3f} |")
+    print(f"z cutoffs: frequentist 1.96, Bayesian eps 0.05 pp {z_cut[0]:.2f}, eps 0.01 pp {z_cut[1]:.2f}")
+
+    x = np.arange(len(rows))
+    fig, ax = plt.subplots(figsize=(8, 5))
+    groups = [([r[1] for r in rows], "tab:blue", "frequentist: p < 0.05 and lift > 0"),
+              ([r[2][0] for r in rows], "tab:orange", "Bayesian: expected loss < 0.05 pp"),
+              ([r[2][1] for r in rows], "tab:green", "Bayesian: expected loss < 0.01 pp")]
+    for k, (vals, color, label) in enumerate(groups):
+        bars = ax.bar(x + (k - 1) * 0.27, vals, 0.27, color=color, label=label)
+        ax.bar_label(bars, labels=[f"{v:.1%}" for v in vals], padding=2, fontsize=8)
+    ax.set_xticks(x)
+    ax.set_xticklabels([f"true lift {r[0] * 100:+g} pp\nagrees with frequentist on\n"
+                        f"{r[3][0]:.1%} (eps 0.05 pp), {r[3][1]:.1%} (eps 0.01 pp) of runs" for r in rows], fontsize=8)
+    ax.set_ylabel(f"Fraction of {n_sims:,} simulations that ship B")
+    ax.set_title(f"Bayesian vs frequentist ship rate ({n:,} users per arm, baseline {P_CONTROL:.0%})",
+                 fontsize=10)
+    ax.set_ylim(0, max(max(r[1], *r[2]) for r in rows) * 1.2)
+    ax.legend(loc="upper left", fontsize=8)
+    fig.tight_layout()
+    fig.savefig(FIG_DIR / "bayes_vs_freq.png", dpi=150)
+    plt.close(fig)
+
+
 if __name__ == "__main__":
     FIG_DIR.mkdir(exist_ok=True)
     make_power_curve()
     make_low_power()
     make_peeking()
     make_sequential()
+    make_bayes_vs_freq()
     print(f"wrote figures to {FIG_DIR}")
