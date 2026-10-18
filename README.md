@@ -2,12 +2,13 @@
 
 Plan an A/B test, analyze its result and get a launch verdict, with Monte Carlo simulations that check the methods against known truth and show how tests go wrong.
 
-**Python 3.10+** · NumPy · SciPy · Matplotlib
+**[Live demo](https://t6523.github.io/ab-test-toolkit/)** · Python 3.10+ · NumPy · SciPy · Matplotlib · Pyodide
 
-<p align="center"><img src="figures/sequential.png" alt="False positive rate against number of looks: peeking at 1.96 rises to 24.5% at 20 looks, calibrated sequential boundaries stay near 5%" width="640"></p>
+<p align="center"><img src="assets/demo.gif" alt="The abkit demo page: changing the smallest lift updates the sample size and the power curve, then a scroll stops at the confidence interval and verdict, the peeking against sequential comparison, one simulated test and the low power histogram" width="640"></p>
 
 ## Highlights
 
+* **Interactive demo, nothing to install.** The [demo page](https://t6523.github.io/ab-test-toolkit/) runs the real Python package in your browser through Pyodide. There is no server and no JavaScript copy of the statistics.
 * **Planning, analysis and a decision in one place.** Sample size, minimum detectable effect, two proportion z test, confidence intervals, a sample ratio mismatch check and a five way launch verdict that compares the interval with a practical threshold you choose before looking at results. A CLI runs it on a CSV.
 * **Verified by simulation.** The vectorized simulator draws conversion counts from known true effects, so the test's false positive rate (5.1%), the CI's coverage (95.0%) and the planned power can be measured. `analyze_batch` is tested to equal the scalar functions element by element.
 * **Shows the failure modes.** Underpowered tests exaggerate the effect they detect (type M error), and peeking at 10 interim looks raises false positives from 5% to 19.2%.
@@ -77,7 +78,7 @@ The cost, at true lift +1 pp with 14,749 users per arm and 100,000 simulations:
 
 The sequential rule costs about 1.7 percentage points of power. Peeking appears to have more power only because its false positive rate is inflated.
 
-![Peeking vs sequential false positive rate](figures/peeking.png)
+![Peeking vs sequential false positive rate](figures/sequential.png)
 
 ### Bayesian versus frequentist
 
@@ -162,6 +163,8 @@ low, high = lift_ci(1000, 10000, 1100, 10000)
 print(decide(low, high, delta=0.005).name)   # INCONCLUSIVE
 ```
 
+Run the demo page locally with `cd docs && python -m http.server 8000`, then open http://localhost:8000. After changing the package, rebuild the page's wheel and cached results with `python scripts/build_site.py` (it needs `pip install build playwright`).
+
 ## Project structure
 
 ```
@@ -175,6 +178,10 @@ abkit/
   sequential.py   peeking, calibrated O'Brien and Fleming style boundaries
   bayes.py        Beta Binomial comparison with expected loss
 scripts/make_figures.py   regenerates every figure and prints the tables
+scripts/build_site.py     rebuilds the demo page's wheel and cached results
+scripts/record_demo.py    records assets/demo.gif from the live page
+docs/                     demo page, installs the abkit wheel in the browser (Pyodide)
+assets/demo.gif           recording of the demo page
 tests/                    256 tests, including statsmodels cross checks
 figures/                  generated figures
 ```
@@ -187,6 +194,7 @@ figures/                  generated figures
 * `decide` looks at the lift interval only, not at guardrail metrics.
 * The Bayesian rule depends on a uniform prior and on `epsilon`, both assumptions.
 * All results are simulated with a fixed true effect and independent users.
+* The demo page needs a network connection the first time, to load Pyodide and Chart.js from their CDNs.
 
 ## References
 
