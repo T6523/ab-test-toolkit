@@ -59,7 +59,7 @@ def test_analyze_example(capsys):
     assert code == 0 and err == ""
     for text in ["10,000", "1,000", "1,100", "10.00%", "11.00%", "-> OK",
                  "+1.00 pp (+10.0% relative)", "0.0211", "[+0.15 pp, +1.85 pp]",
-                 "Delta:    0.50 pp", "INCONCLUSIVE", "collect more data"]:
+                 "Delta:    0.50 pp", "INCONCLUSIVE", "Collect more data"]:
         assert text in out
     assert "WARNING" not in out
 

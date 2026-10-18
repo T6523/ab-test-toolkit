@@ -19,17 +19,17 @@ _EXPLANATIONS = {
         "threshold: launch."),
     Verdict.HARMFUL: (
         "The whole interval is below zero: the change likely hurts the "
-        "metric; do not launch."),
+        "metric. Do not launch."),
     Verdict.STAT_SIG_NOT_PRACTICAL: (
         "The effect is real but even its upper end is below the practical "
         "threshold: do not launch unless the change is nearly free."),
     Verdict.NO_MEANINGFUL_EFFECT: (
         "The interval includes zero and its upper end is below the "
-        "practical threshold: a lift worth shipping is ruled out; do not "
+        "practical threshold: a lift worth shipping is ruled out. Do not "
         "launch."),
     Verdict.INCONCLUSIVE: (
         "The interval spans the practical threshold: the data cannot "
-        "separate a worthwhile lift from a smaller one; collect more "
+        "separate a worthwhile lift from a smaller one. Collect more "
         "data."),
 }
 

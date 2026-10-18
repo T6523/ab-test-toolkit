@@ -1,0 +1,579 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>abkit demo: plan, analyze and decide A/B tests</title>
+<meta name="description" content="Interactive demo of abkit. The real Python package runs in your browser (Pyodide). It covers sample size, launch verdict, peeking vs sequential testing and low power exaggeration.">
+<script>try { const m = localStorage.getItem("abkit-theme"); if (m === "light" || m === "dark") document.documentElement.dataset.theme = m; } catch (e) {}</script>
+<!--
+  Rebuild the wheel after changing abkit (from the repo root):
+    python -m build --wheel --outdir docs .
+  The page loads docs/abkit-0.1.0-py3-none-any.whl, so the filename below must match the version in pyproject.toml.
+-->
+<style>
+  :root {
+    color-scheme: light;
+    --surface-1: #fcfcfb;
+    --surface-2: #f4f3f0;
+    --hairline: #e3e2dd;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted: #6b6a66;
+    --series-1: #2a78d6;
+    --series-2: #eb6834;
+    --series-3: #1baf7a;
+    --neutral: #9a9893;
+    --critical: #d03b3b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --surface-1: #1a1a19;
+      --surface-2: #232321;
+      --hairline: #333330;
+      --text-primary: #f0efec;
+      --text-secondary: #c3c2b7;
+      --text-muted: #a3a29a;
+      --series-1: #3987e5;
+      --series-2: #d95926;
+      --series-3: #199e70;
+      --neutral: #8a8984;
+    }
+  }
+  :root[data-theme="light"] { color-scheme: light; }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-1: #1a1a19;
+    --surface-2: #232321;
+    --hairline: #333330;
+    --text-primary: #f0efec;
+    --text-secondary: #c3c2b7;
+    --text-muted: #a3a29a;
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --neutral: #8a8984;
+  }
+  .topbar { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px 16px; flex-wrap: wrap; }
+  .theme { display: inline-flex; border: 1px solid var(--hairline); border-radius: 999px; padding: 2px; background: var(--surface-2); }
+  .theme button {
+    background: transparent; color: var(--text-secondary); border: 0; border-radius: 999px;
+    padding: 4px 12px; font-size: .85rem;
+  }
+  .theme button[aria-pressed="true"] { background: var(--series-1); color: #fff; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--surface-1); color: var(--text-primary);
+    font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 900px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { font-size: 1.7rem; line-height: 1.2; margin: 0 0 8px; }
+  h2 { font-size: 1.25rem; margin: 0 0 4px; }
+  p { margin: 0 0 12px; }
+  a { color: var(--series-1); }
+  .lead { color: var(--text-secondary); font-size: 1.05rem; }
+  .note { background: var(--surface-2); border: 1px solid var(--hairline); border-radius: 8px;
+          padding: 12px 14px; color: var(--text-secondary); font-size: .95rem; margin: 16px 0; }
+  #status {
+    display: inline-flex; align-items: center; gap: 10px; margin: 4px 0 0;
+    padding: 8px 16px; border-radius: 999px; font-size: .95rem; line-height: 1.3;
+    background: var(--surface-2); border: 1px solid var(--hairline); color: var(--text-secondary);
+  }
+  #status b { color: var(--text-primary); }
+  #status .icon { width: 1.15rem; height: 1.15rem; flex: none; display: grid; place-items: center; border-radius: 50%;
+                  font-size: .8rem; font-weight: 700; color: #fff; line-height: 1; }
+  #status[data-state="loading"] .icon { background: var(--neutral); animation: pulse 1.2s ease-in-out infinite; }
+  #status[data-state="ready"] { border-color: var(--series-3); }
+  #status[data-state="ready"] .icon { background: var(--series-3); }
+  #status[data-state="error"] { border-color: var(--critical); }
+  #status[data-state="error"] .icon { background: var(--critical); }
+  @keyframes pulse { 50% { opacity: .35; } }
+  @media (prefers-reduced-motion: reduce) { #status[data-state="loading"] .icon { animation: none; } }
+  section { border-top: 1px solid var(--hairline); padding: 28px 0 8px; margin-top: 28px; }
+  .sub { color: var(--text-secondary); margin-bottom: 16px; }
+  form, .controls { display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: end; margin-bottom: 14px; }
+  label { display: flex; flex-direction: column; font-size: .85rem; color: var(--text-secondary); gap: 4px; }
+  input, select {
+    font: inherit; color: var(--text-primary); background: var(--surface-1);
+    border: 1px solid var(--hairline); border-radius: 6px; padding: 6px 8px; width: 9.5rem;
+  }
+  input:focus-visible, select:focus-visible, button:focus-visible, summary:focus-visible {
+    outline: 2px solid var(--series-1); outline-offset: 2px;
+  }
+  button {
+    font: inherit; cursor: pointer; border-radius: 6px; padding: 7px 14px;
+    border: 1px solid var(--series-1); background: var(--series-1); color: #fff;
+  }
+  button.secondary { background: transparent; color: var(--series-1); }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  .result { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin: 6px 0 14px; }
+  .stat { background: var(--surface-2); border: 1px solid var(--hairline); border-radius: 8px; padding: 10px 12px; }
+  .stat .k { font-size: .8rem; color: var(--text-secondary); }
+  .stat .v { font-size: 1.3rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .verdict { background: var(--surface-2); border: 1px solid var(--hairline); border-left: 4px solid var(--series-1);
+             border-radius: 8px; padding: 10px 14px; margin: 6px 0 14px; }
+  .verdict b { font-size: 1.05rem; }
+  .err { color: var(--critical); font-weight: 600; min-height: 1.4em; margin: 0 0 8px; }
+  .chart { position: relative; height: 340px; margin: 8px 0; }
+  .chart.short { height: 300px; }
+  svg text { fill: var(--text-secondary); font: 12px system-ui, sans-serif; }
+  details { margin: 6px 0 12px; }
+  summary { cursor: pointer; color: var(--text-secondary); font-size: .9rem; }
+  table { border-collapse: collapse; font-size: .85rem; margin-top: 8px; font-variant-numeric: tabular-nums; }
+  th, td { border-bottom: 1px solid var(--hairline); padding: 4px 12px; text-align: right; }
+  th:first-child, td:first-child { text-align: left; }
+  .tablewrap { max-height: 260px; overflow: auto; }
+  footer { border-top: 1px solid var(--hairline); margin-top: 36px; padding-top: 16px; color: var(--text-muted); font-size: .9rem; }
+  @media (max-width: 560px) { input, select { width: 100%; } label { flex: 1 1 8rem; } }
+</style>
+</head>
+<body>
+<main>
+  <div class="topbar">
+    <h1>abkit: plan, analyze and decide A/B tests</h1>
+    <div class="theme" role="group" aria-label="Color theme">
+      <button type="button" data-mode="auto" aria-pressed="false" title="Follow your device setting">System</button>
+      <button type="button" data-mode="light" aria-pressed="false">Light</button>
+      <button type="button" data-mode="dark" aria-pressed="false">Dark</button>
+    </div>
+  </div>
+  <p class="lead">Everything below is computed by the real <a href="https://github.com/T6523/ab-test-toolkit">abkit</a> Python package, running in your browser.</p>
+  <div class="note"><b>What this is.</b> A calculator and simulator for a binary conversion metric (converted or not) with two arms.</div>
+  <div id="status" data-state="loading" role="status" aria-live="polite"><span class="icon" aria-hidden="true"></span><span id="status-text"><b>Loading Python</b> (about 10 seconds the first time, cached afterwards)…</span></div>
+
+  <!-- 1. Planner -->
+  <section id="plan">
+    <h2>1. How many users do I need?</h2>
+    <p class="sub">Sample size per arm for a two sided two proportion z test, and how power grows with sample size.</p>
+    <form id="plan-form">
+      <label>Baseline conversion (%)<input name="baseline" type="number" step="any" value="10"></label>
+      <label>Smallest lift to detect (pp)<input name="mde" type="number" step="any" value="1"></label>
+      <label>Significance level alpha<input name="alpha" type="number" step="any" value="0.05"></label>
+      <label>Power<input name="power" type="number" step="any" value="0.8"></label>
+      <button type="submit" disabled>Calculate</button>
+    </form>
+    <p class="err" id="plan-err" role="alert"></p>
+    <div class="result" id="plan-result"></div>
+    <div class="chart"><canvas id="plan-chart" role="img" aria-label="Power against users per arm for three lifts, with the planned sample size marked"></canvas></div>
+    <details><summary>Table view</summary><div class="tablewrap" id="plan-table"></div></details>
+  </section>
+
+  <!-- 2. Analyzer -->
+  <section id="analyze">
+    <h2>2. What does my result say?</h2>
+    <p class="sub">Type the counts from a finished test. Delta is the smallest lift worth shipping and should be chosen <em>before</em> looking at results. The defaults are the example in the repo: significant, but not clearly worth shipping.</p>
+    <form id="analyze-form">
+      <label>Control users<input name="nc" type="number" step="1" value="10000"></label>
+      <label>Control conversions<input name="xc" type="number" step="1" value="1000"></label>
+      <label>Treatment users<input name="nt" type="number" step="1" value="10000"></label>
+      <label>Treatment conversions<input name="xt" type="number" step="1" value="1100"></label>
+      <label>Delta (pp)<input name="delta" type="number" step="any" value="0.5"></label>
+      <label>Alpha<input name="alpha" type="number" step="any" value="0.05"></label>
+      <label>Planned control share<input name="ratio" type="number" step="any" value="0.5"></label>
+      <button type="submit" disabled>Analyze</button>
+    </form>
+    <p class="err" id="analyze-err" role="alert"></p>
+    <div class="result" id="analyze-result"></div>
+    <div class="verdict" id="analyze-verdict" hidden></div>
+    <div id="ci-chart"></div>
+  </section>
+
+  <!-- 3. Peeking vs sequential -->
+  <section id="peek">
+    <h2>3. What goes wrong when you peek?</h2>
+    <p class="sub">A/A tests (no real effect). Checking the ordinary z test at every look and stopping at the first "significant" result inflates false positives far above 5%. Calibrated sequential boundaries keep them near 5%.</p>
+    <form id="peek-form">
+      <label>Users per arm in total<input name="n" type="number" step="1" value="10000"></label>
+      <label>Baseline conversion (%)<input name="baseline" type="number" step="any" value="10"></label>
+      <label>Simulations per point<select name="sims"><option>2000</option><option selected>5000</option><option>20000</option></select></label>
+      <button type="submit" disabled>Run simulation</button>
+    </form>
+    <p class="err" id="peek-err" role="alert"></p>
+    <div class="chart"><canvas id="peek-chart" role="img" aria-label="False positive rate against number of looks for peeking and for sequential boundaries"></canvas></div>
+    <details><summary>Table view</summary><div class="tablewrap" id="peek-table"></div></details>
+
+    <h3 style="font-size:1.05rem;margin:22px 0 4px">Watch one test where nothing is really different</h3>
+    <p class="sub">Both groups are identical, so any "winner" is a false alarm. The blue line is how strong the evidence looks after each check. Higher means it looks more like a real difference. A rule declares a win the first time blue goes above its bar. Peeking uses a flat bar at 1.96 (orange). The sequential rule uses the green curve: a very high bar early, when there is little data and flukes are common, falling to nearly the same bar at the end. That strict early bar is why the sequential line in the chart above stays near 5%.</p>
+    <div class="controls">
+      <label>Number of checks<select id="path-looks"><option>5</option><option selected>10</option><option>20</option></select></label>
+      <button type="button" id="path-fooled" disabled>Show a run where peeking is fooled</button>
+      <button type="button" class="secondary" id="path-next" disabled>New random run</button>
+    </div>
+    <p id="path-text" style="min-height:3em"></p>
+    <div class="chart short"><canvas id="path-chart" role="img" aria-label="Strength of evidence at each check for one test with no real effect, with the peeking cutoff and the sequential cutoffs"></canvas></div>
+  </section>
+
+  <!-- 4. Low power -->
+  <section id="low">
+    <h2>4. What does low power do to your result?</h2>
+    <p class="sub">With too few users, the runs that reach significance are the ones where noise pushed the estimate far above the truth, so a "win" overstates the effect.</p>
+    <form id="low-form">
+      <label>Users per arm<input name="n" type="number" step="1" value="2000"></label>
+      <label>Baseline conversion (%)<input name="baseline" type="number" step="any" value="10"></label>
+      <label>True lift (pp)<input name="lift" type="number" step="any" value="1"></label>
+      <button type="submit" disabled>Simulate 20,000 tests</button>
+    </form>
+    <p class="err" id="low-err" role="alert"></p>
+    <div class="result" id="low-result"></div>
+    <div class="chart"><canvas id="low-chart" role="img" aria-label="Histogram of estimated lifts for all simulated tests and for significant tests only"></canvas></div>
+  </section>
+
+  <footer>
+    Source, tests and method notes are in the <a href="https://github.com/T6523/ab-test-toolkit">GitHub repository</a>.
+    Python runs through <a href="https://pyodide.org">Pyodide</a>, and charts use Chart.js. Simulations use fixed seeds, so the same inputs give the same numbers.
+  </footer>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js"></script>
+<script>
+"use strict";
+const $ = (s) => document.querySelector(s);
+const ICONS = { loading: "", ready: "✓", error: "✕" };
+function setStatus(state, html) {
+  const el = $("#status");
+  el.dataset.state = state;
+  el.querySelector(".icon").textContent = ICONS[state];
+  $("#status-text").innerHTML = html;
+}
+const WHEEL = "abkit-0.1.0-py3-none-any.whl";
+let py;
+const charts = {};
+const last = {};   // last drawn data per chart, so a theme change can redraw
+
+// ---------- theme ----------
+const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const rgba = (hex, a) => {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgba(${n >> 16}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
+};
+function base() {
+  return {
+    ink: css("--text-primary"), ink2: css("--text-secondary"), grid: css("--hairline"), surface: css("--surface-1"),
+    s1: css("--series-1"), s2: css("--series-2"), s3: css("--series-3"), neutral: css("--neutral"),
+  };
+}
+function scales(t, xTitle, yTitle, extra = {}) {
+  const axis = (title, o = {}) => ({
+    title: { display: true, text: title, color: t.ink2 },
+    ticks: { color: t.ink2 }, grid: { color: t.grid, drawTicks: false }, border: { color: t.grid }, ...o,
+  });
+  return { x: axis(xTitle, extra.x), y: axis(yTitle, extra.y) };
+}
+// draws a dataset's label beside its last point, so identity never depends on color alone
+const endLabels = {
+  id: "endLabels",
+  afterDatasetsDraw(chart) {
+    const { ctx, chartArea } = chart;
+    ctx.save();
+    ctx.font = "12px system-ui, sans-serif";
+    ctx.fillStyle = base().ink2;
+    chart.data.datasets.forEach((ds, i) => {
+      if (!ds.endLabel || !chart.isDatasetVisible(i)) return;
+      const pts = chart.getDatasetMeta(i).data;
+      if (ds.labelAt !== undefined) {   // label where the curve first reaches labelAt (separates curves that end together)
+        const k = ds.data.findIndex((q) => q.y >= ds.labelAt);
+        const p = pts[k >= 0 ? k : pts.length - 1];
+        ctx.textAlign = "left";
+        ctx.fillText(ds.endLabel, p.x + 8, p.y + 18);
+        return;
+      }
+      const p = pts[pts.length - 1];
+      if (!p) return;
+      ctx.textAlign = "right";
+      ctx.fillText(ds.endLabel, Math.min(p.x, chartArea.right) - 4, p.y - 8);
+    });
+    ctx.restore();
+  },
+};
+function draw(id, config) {
+  if (charts[id]) charts[id].destroy();
+  config.plugins = [endLabels];
+  config.options.responsive = true;
+  config.options.maintainAspectRatio = false;
+  config.options.animation = false;
+  charts[id] = new Chart($("#" + id), config);
+}
+const line = (label, color, data, o = {}) => ({
+  label, data, borderColor: color, backgroundColor: color, borderWidth: 2, pointRadius: 0, pointHoverRadius: 5, tension: 0, ...o,
+});
+const dashed = (label, color, data) => line(label, color, data, { borderWidth: 1.5, borderDash: [6, 4], pointHoverRadius: 0 });
+const legend = (t) => ({ position: "bottom", labels: { color: t.ink2, usePointStyle: true, boxWidth: 8 } });
+const pct = (v, d = 1) => (v * 100).toFixed(d) + "%";
+const pp = (v, d = 2) => (v >= 0 ? "+" : "") + (v * 100).toFixed(d) + " pp";
+
+function table(el, headers, rows) {
+  el.innerHTML = "<table><thead><tr>" + headers.map((h) => `<th>${h}</th>`).join("") + "</tr></thead><tbody>" +
+    rows.map((r) => "<tr>" + r.map((c) => `<td>${c}</td>`).join("") + "</tr>").join("") + "</tbody></table>";
+}
+const stat = (k, v) => `<div class="stat"><div class="k">${k}</div><div class="v">${v}</div></div>`;
+
+async function call(fn, ...args) {
+  await new Promise((r) => setTimeout(r, 20));          // let "running" text paint first
+  return JSON.parse(py.globals.get(fn)(...args));
+}
+function message(e) {
+  const lines = String(e.message || e).trim().split("\n");
+  return lines[lines.length - 1].replace(/^(ValueError|TypeError|PythonError): /, "");
+}
+const fields = (form) => Object.fromEntries(new FormData(form).entries());
+const num = (v) => Number(v);
+
+// ---------- 1. planner ----------
+const planArgs = () => {
+  const f = fields($("#plan-form"));
+  return [num(f.baseline) / 100, num(f.mde) / 100, num(f.alpha), num(f.power)];
+};
+function showPlan(d) {
+  const f = fields($("#plan-form")), rel = num(f.mde) / num(f.baseline);
+  $("#plan-result").innerHTML = stat("Users per arm", d.n.toLocaleString()) +
+    stat("Total users", (2 * d.n).toLocaleString()) +
+    stat("Lift to detect", `${num(f.mde) >= 0 ? "+" : ""}${f.mde} pp`) +
+    stat("Relative to baseline", `${rel >= 0 ? "+" : ""}${(rel * 100).toFixed(1)}%`);
+  last.plan = d; drawPlan();
+}
+async function runPlan() {
+  $("#plan-err").textContent = "";
+  try { showPlan(await call("plan", ...planArgs())); } catch (e) { $("#plan-err").textContent = "Error: " + message(e); }
+}
+function drawPlan() {
+  const d = last.plan; if (!d) return;
+  const t = base(), cols = [t.s3, t.s1, t.s2];   // smaller lift, entered lift, larger lift
+  const sets = d.curves.map((c, i) => {
+    const entered = Math.abs(c.lift - d.mde) < 1e-12;
+    const label = `${c.lift >= 0 ? "+" : ""}${(c.lift * 100).toFixed(2).replace(/\.?0+$/, "")} pp lift`;
+    return line(label, cols[d.curves.length === 3 ? i : (entered ? 1 : 0)],
+      d.grid.map((n, j) => ({ x: n, y: c.powers[j] })), { endLabel: label, labelAt: d.power });
+  });
+  sets.push(dashed(`${(d.power * 100).toFixed(0)}% power`, t.neutral, [{ x: d.grid[0], y: d.power }, { x: d.grid[d.grid.length - 1], y: d.power }]));
+  sets.push({ label: `Planned: ${d.n.toLocaleString()} per arm`, type: "line", showLine: false, data: [{ x: d.n, y: d.power }],
+    pointRadius: 6, pointHoverRadius: 8, pointBackgroundColor: t.s1, pointBorderColor: t.surface, pointBorderWidth: 2 });
+  draw("plan-chart", {
+    type: "line", data: { datasets: sets },
+    options: {
+      interaction: { mode: "nearest", axis: "x", intersect: false },
+      scales: scales(t, "Users per arm", "Power", { x: { type: "linear" }, y: { min: 0, max: 1, ticks: { color: t.ink2, callback: (v) => pct(v, 0) } } }),
+      plugins: { legend: legend(t), tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${pct(c.parsed.y)}` } } },
+    },
+  });
+  const step = Math.ceil(d.grid.length / 12);
+  table($("#plan-table"), ["Users per arm", ...d.curves.map((c) => `Power at ${(c.lift * 100).toFixed(2)} pp`)],
+    d.grid.filter((_, i) => i % step === 0).map((n) => {
+      const i = d.grid.indexOf(n);
+      return [n.toLocaleString(), ...d.curves.map((c) => pct(c.powers[i]))];
+    }));
+}
+
+// ---------- 2. analyzer ----------
+const analyzeArgs = () => {
+  const f = fields($("#analyze-form"));
+  return [num(f.nc), num(f.xc), num(f.nt), num(f.xt), num(f.delta) / 100, num(f.alpha), num(f.ratio)];
+};
+function showAnalyze(d) {
+  const f = fields($("#analyze-form"));
+  $("#analyze-result").innerHTML =
+    stat("Control rate", pct(d.rates[0], 2)) + stat("Treatment rate", pct(d.rates[1], 2)) +
+    stat("Lift", pp(d.lift) + (d.rel === null ? "" : ` (${(d.rel * 100).toFixed(1)}% relative)`)) +
+    stat("p value (two sided)", d.p < 1e-4 ? d.p.toExponential(1) : d.p.toFixed(4)) +
+    stat(`${((1 - num(f.alpha)) * 100).toFixed(0)}% CI`, `[${pp(d.low)}, ${pp(d.high)}]`) +
+    stat("Sample ratio check", d.srm.flag ? "MISMATCH" : "OK");
+  const v = $("#analyze-verdict");
+  v.hidden = false;
+  v.innerHTML = `<b>Verdict: ${d.verdict}</b><br>${d.why}` +
+    (d.srm.flag ? `<br><b>Warning:</b> the arm sizes differ from the planned split (chi square p = ${d.srm.p_value.toExponential(1)}). Do not trust these results until the cause is found.` : "");
+  last.ci = d; drawCI();
+}
+async function runAnalyze() {
+  $("#analyze-err").textContent = "";
+  try { showAnalyze(await call("analyze", ...analyzeArgs())); } catch (e) { $("#analyze-err").textContent = "Error: " + message(e); }
+}
+function drawCI() {
+  const d = last.ci; if (!d) return;
+  const W = 720, H = 130, L = 30, R = 30, y = 62, lo = Math.min(d.low, 0) , hi = Math.max(d.high, d.delta);
+  const pad = (hi - lo) * 0.18 || 0.01, a = lo - pad, b = hi + pad;
+  const X = (v) => L + ((v - a) / (b - a)) * (W - L - R);
+  const span = b - a, raw = span / 6, mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const stepv = [1, 2, 5, 10].map((m) => m * mag).find((s) => s >= raw) || raw;
+  let ticks = "";
+  for (let v = Math.ceil(a / stepv) * stepv; v <= b + 1e-12; v += stepv)
+    ticks += `<line x1="${X(v)}" x2="${X(v)}" y1="${y + 22}" y2="${y + 28}" stroke="var(--hairline)"/>` +
+             `<text x="${X(v)}" y="${y + 44}" text-anchor="middle">${(v * 100).toFixed(2).replace(/\.?0+$/, "")}</text>`;
+  $("#ci-chart").innerHTML = `
+  <svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Confidence interval ${pp(d.low)} to ${pp(d.high)} for the lift, with zero and the practical threshold ${pp(d.delta)} marked">
+    <line x1="${L}" x2="${W - R}" y1="${y + 22}" y2="${y + 22}" stroke="var(--hairline)"/>${ticks}
+    <line x1="${X(0)}" x2="${X(0)}" y1="22" y2="${y + 22}" stroke="var(--text-secondary)" stroke-width="1.5"/>
+    <text x="${X(0)}" y="14" text-anchor="middle">0 (no effect)</text>
+    <line x1="${X(d.delta)}" x2="${X(d.delta)}" y1="22" y2="${y + 22}" stroke="var(--series-2)" stroke-width="2" stroke-dasharray="6 4"/>
+    <text x="${X(d.delta)}" y="14" text-anchor="middle">delta = ${(d.delta * 100).toFixed(2).replace(/\.?0+$/, "")} pp</text>
+    <line x1="${X(d.low)}" x2="${X(d.high)}" y1="${y}" y2="${y}" stroke="var(--series-1)" stroke-width="6" stroke-linecap="round"/>
+    <circle cx="${X(d.lift)}" cy="${y}" r="6" fill="var(--series-1)" stroke="var(--surface-1)" stroke-width="2"/>
+    <text x="${X(d.low)}" y="${y - 12}" text-anchor="middle">${pp(d.low)}</text>
+    <text x="${X(d.high)}" y="${y - 12}" text-anchor="middle">${pp(d.high)}</text>
+    <text x="${W / 2}" y="${H - 6}" text-anchor="middle">Absolute lift, treatment minus control (percentage points)</text>
+  </svg>`;
+}
+
+// ---------- 3. peeking ----------
+const peekArgs = () => {
+  const f = fields($("#peek-form"));
+  return [num(f.n), num(f.baseline) / 100, num(f.sims)];
+};
+const showPeek = (d) => { last.peek = d; drawPeek(); };
+async function runPeek() {
+  $("#peek-err").textContent = "";
+  const btn = $("#peek-form button"); btn.disabled = true; btn.textContent = "Running…";
+  try { showPeek(await call("peeking", ...peekArgs())); } catch (e) { $("#peek-err").textContent = "Error: " + message(e); }
+  btn.disabled = false; btn.textContent = "Run simulation";
+}
+function drawPeek() {
+  const d = last.peek; if (!d) return;
+  const t = base(), rows = d.rows, labels = rows.map((r) => String(r.looks));
+  draw("peek-chart", {
+    type: "line",
+    data: {
+      labels,
+      datasets: [
+        line("Peeking (z > 1.96 at every look)", t.s2, rows.map((r) => r.peeking), { endLabel: "peeking", pointRadius: 4 }),
+        line("Sequential boundaries", t.s3, rows.map((r) => r.sequential), { endLabel: "sequential", pointRadius: 4 }),
+        dashed("Nominal 5%", t.neutral, rows.map(() => 0.05)),
+      ],
+    },
+    options: {
+      interaction: { mode: "index", intersect: false },
+      scales: scales(t, "Number of looks (equally spaced)", "False positive rate",
+        { y: { min: 0, suggestedMax: 0.3, ticks: { color: t.ink2, callback: (v) => pct(v, 0) } } }),
+      plugins: { legend: legend(t), tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${pct(c.parsed.y)}` } } },
+    },
+  });
+  table($("#peek-table"), ["Looks", "Boundary constant c", "Peeking", "Sequential"],
+    rows.map((r) => [r.looks, r.c.toFixed(3), pct(r.peeking), pct(r.sequential)]));
+}
+
+let pathSeed = 1;
+const pathArgs = () => {
+  const f = fields($("#peek-form"));
+  return [num(f.n), num(f.baseline) / 100, Number($("#path-looks").value)];
+};
+const showPath = (d) => { pathSeed = d.seed; last.path = d; drawPath(); };
+async function runPath(fooled) {
+  if (!fooled) pathSeed += 1;
+  try {
+    showPath(await call("path", ...pathArgs(), pathSeed, fooled)); $("#peek-err").textContent = "";
+  } catch (e) { $("#peek-err").textContent = "Error: " + message(e); }
+}
+function drawPath() {
+  const d = last.path; if (!d) return;
+  const t = base(), x = d.z.map((_, i) => i + 1);
+  draw("path-chart", {
+    type: "line",
+    data: {
+      labels: x,
+      datasets: [
+        line("Evidence in this test (|z|)", t.s1, d.z, { endLabel: "evidence", pointRadius: 4 }),
+        dashed("Peeking: win if above 1.96", t.s2, x.map(() => d.crit)),
+        line("Sequential: win if above this curve", t.s3, d.bounds, { endLabel: "sequential bar", borderWidth: 2, borderDash: [2, 4], pointHoverRadius: 0 }),
+      ],
+    },
+    options: {
+      interaction: { mode: "index", intersect: false },
+      scales: scales(t, `Check number (one every ${d.step.toLocaleString()} users per arm)`, "Strength of evidence (|z|)", { y: { min: 0, suggestedMax: 4 } }),
+      plugins: { legend: legend(t), tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${c.parsed.y.toFixed(2)}` } } },
+    },
+  });
+  const peek = d.peek_hit ? `Peeking would have stopped at check ${d.peek_hit} and declared a winner, a false alarm, because there is no real effect here.` : "Peeking never crossed 1.96 in this run.";
+  const seq = d.seq_hit ? `The sequential rule stopped at check ${d.seq_hit}.` : "The sequential rule never got above its bar, so it correctly reports nothing.";
+  $("#path-text").textContent = `${peek} ${seq}`;
+}
+
+// ---------- 4. low power ----------
+const lowArgs = () => {
+  const f = fields($("#low-form"));
+  return [num(f.n), num(f.baseline) / 100, num(f.lift) / 100];
+};
+function showLow(d) {
+  $("#low-result").innerHTML = stat("Power", pct(d.power)) +
+    stat("Exaggeration of significant results", d.ratio === null ? "none significant" : d.ratio.toFixed(2) + "x the true lift") +
+    stat("Wrong sign among significant", d.type_s === null ? "n/a" : pct(d.type_s, 2)) +
+    stat("Significant runs", d.n_sig.toLocaleString() + " of 20,000");
+  last.low = d; drawLow();
+}
+async function runLow() {
+  $("#low-err").textContent = "";
+  const btn = $("#low-form button"); btn.disabled = true; btn.textContent = "Running…";
+  try { showLow(await call("lowpower", ...lowArgs())); } catch (e) { $("#low-err").textContent = "Error: " + message(e); }
+  btn.disabled = false; btn.textContent = "Simulate 20,000 tests";
+}
+function drawLow() {
+  const d = last.low; if (!d) return;
+  const t = base(), pts = (arr) => d.centers.map((c, i) => ({ x: c, y: arr[i] }));
+  const maxY = Math.ceil((Math.max(...d.all) * 1.15) / 200) * 200;
+  const sets = [
+    line("All 20,000 runs", t.neutral, pts(d.all), { stepped: "middle", fill: "origin", backgroundColor: rgba(t.neutral, 0.35), borderWidth: 1.5, pointHoverRadius: 0 }),
+    line("Significant runs only", t.s2, pts(d.sig), { stepped: "middle", fill: "origin", backgroundColor: rgba(t.s2, 0.6), borderWidth: 1.5, pointHoverRadius: 0 }),
+    line(`True lift = ${d.lift_pp.toFixed(2).replace(/\.?0+$/, "")} pp`, t.ink, [{ x: d.lift_pp, y: 0 }, { x: d.lift_pp, y: maxY }], { borderDash: [6, 4], borderWidth: 1.5, pointHoverRadius: 0 }),
+  ];
+  if (d.mean_sig !== null)
+    sets.push(line(`Mean of significant = ${d.mean_sig.toFixed(2)} pp`, t.s2, [{ x: d.mean_sig, y: 0 }, { x: d.mean_sig, y: maxY }], { borderDash: [2, 3], borderWidth: 2, pointHoverRadius: 0 }));
+  draw("low-chart", {
+    type: "line", data: { datasets: sets },
+    options: {
+      interaction: { mode: "nearest", axis: "x", intersect: false },
+      scales: scales(t, "Estimated lift (pp)", "Number of simulated tests", { x: { type: "linear" }, y: { min: 0, max: maxY } }),
+      plugins: { legend: legend(t), tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${c.parsed.y.toLocaleString()}` } } },
+    },
+  });
+}
+
+// ---------- boot ----------
+// docs/initial.json holds the results for the default inputs (written by scripts/build_site.py with the same
+// Python code), so the charts draw at once while Pyodide loads. It is used only if the form still has the defaults.
+async function loadCache() {
+  try {
+    const c = await (await fetch("initial.json")).json();
+    const now = { plan: planArgs(), analyze: analyzeArgs(), peek: peekArgs(), path: [...pathArgs(), 1, true], low: lowArgs() };
+    if (JSON.stringify(c.args) !== JSON.stringify(now)) return false;
+    showPlan(c.plan); showAnalyze(c.analyze); showPeek(c.peek); showPath(c.path); showLow(c.low);
+    return true;
+  } catch (e) { return false; }
+}
+async function boot() {
+  const cached = await loadCache();
+  if (cached) setStatus("loading", "<b>Loading Python.</b> The charts show the default inputs. The buttons unlock when it is ready.");
+  try {
+    py = await loadPyodide();
+    await py.loadPackage(["numpy", "scipy", "micropip"]);
+    setStatus("loading", "<b>Installing abkit…</b>");
+    await py.runPythonAsync(`import micropip\nawait micropip.install("./${WHEEL}", deps=False)`);
+    await py.runPythonAsync(await (await fetch("glue.py")).text());
+  } catch (e) {
+    setStatus("error", `<b>Could not start Python.</b> ${cached ? "Only the precomputed defaults are shown. " : ""}${message(e)}. Check your connection and reload.`);
+    return;
+  }
+  setStatus("ready", "<b>Ready.</b> Every number below is computed by abkit, live in your browser.");
+  document.querySelectorAll("button[disabled]").forEach((b) => (b.disabled = false));
+  $("#plan-form").addEventListener("submit", (e) => { e.preventDefault(); runPlan(); });
+  $("#analyze-form").addEventListener("submit", (e) => { e.preventDefault(); runAnalyze(); });
+  $("#peek-form").addEventListener("submit", (e) => { e.preventDefault(); runPeek(); });
+  $("#low-form").addEventListener("submit", (e) => { e.preventDefault(); runLow(); });
+  $("#path-fooled").addEventListener("click", () => runPath(true));
+  $("#path-next").addEventListener("click", () => runPath(false));
+  $("#path-looks").addEventListener("change", () => runPath(true));
+  if (!cached) { await runPlan(); await runAnalyze(); await runPeek(); await runPath(true); await runLow(); }
+  window.__ready = true;
+}
+const redrawAll = () => { drawPlan(); drawCI(); drawPeek(); drawPath(); drawLow(); };
+function setTheme(mode, save = true) {
+  if (mode === "light" || mode === "dark") document.documentElement.dataset.theme = mode;
+  else { mode = "auto"; delete document.documentElement.dataset.theme; }   // "System": follow the device setting
+  document.querySelectorAll(".theme button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.mode === mode)));
+  if (save) { try { mode === "auto" ? localStorage.removeItem("abkit-theme") : localStorage.setItem("abkit-theme", mode); } catch (e) {} }
+  redrawAll();
+}
+document.querySelectorAll(".theme button").forEach((b) => b.addEventListener("click", () => setTheme(b.dataset.mode)));
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", redrawAll);
+setTheme(document.documentElement.dataset.theme || "auto", false);   // reflect the saved choice in the toggle
+boot();
+</script>
+</body>
+</html>

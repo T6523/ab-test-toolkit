@@ -6,3 +6,4 @@ __pycache__/
 # metadata
 *.egg-info/ 
 ols_check.py
+!README.md
